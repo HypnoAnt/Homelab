@@ -1,0 +1,8 @@
+homelab:
+  hosts:
+    ajax:
+      ansible_host: 192.168.0.45
+    menelaus:
+      ansible_host: 192.168.0.35
+    my_host_03:
+      ansible_host: 192.168.0.8
