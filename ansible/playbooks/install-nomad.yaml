@@ -1,0 +1,178 @@
+---
+- name: Install and configure Nomad
+  hosts: nomad
+  become: true
+  vars:
+    nomad_datacenter_name: "dc1"
+    nomad_server_bootstrap_expect: 3
+  tasks:
+    - name: Ensure required packages are installed
+      apt:
+        name:
+          - curl
+          - gnupg
+        state: present
+      become: true
+
+    - name: Create keyrings directory if it doesn't exist
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: Add HashiCorp apt GPG key
+      get_url:
+        url: https://apt.releases.hashicorp.com/gpg
+        dest: /etc/apt/keyrings/hashicorp.gpg
+        mode: '0644'
+
+    - name: Get architecture
+      command: dpkg --print-architecture
+      register: arch
+
+    - name: Get distro codename
+      command: lsb_release -cs
+      register: distro
+
+    - name: Add nomad user
+      user:
+        name: nomad
+        shell: /bin/false
+        system: yes
+
+    - name: Create nomad group
+      group:
+        name: nomad
+        system: yes
+
+    - name: Add HashiCorp APT repository
+      copy:
+        dest: /etc/apt/sources.list.d/hashicorp.list
+        content: |
+          deb [arch={{ arch.stdout }} signed-by=/etc/apt/keyrings/hashicorp.gpg] https://apt.releases.hashicorp.com {{ distro.stdout }} main
+        mode: '0644'
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install or update nomad
+      apt:
+        name: nomad
+        state: latest
+        update_cache: yes
+
+    - name: Create nomad directories
+      file:
+        path: '{{ item }}'
+        state: directory
+        recurse: yes
+        owner: nomad
+        group: nomad
+        mode: 0750
+      loop:
+        - /etc/nomad.d
+        - /opt/nomad
+
+    - name: Copy nomad base configuration
+      copy:
+        dest: /etc/nomad.d/nomad.hcl
+        content: |
+          datacenter = "{{ nomad_datacenter_name }}"
+          data_dir = "/opt/nomad"
+          bind_addr = "0.0.0.0"
+          advertise {
+            http = "{{ ansible_host }}"
+            rpc  = "{{ ansible_host }}"
+            serf = "{{ ansible_host }}"
+          }
+          telemetry {
+            collection_interval        = "1s"
+            disable_hostname           = true
+            prometheus_metrics         = true
+            publish_allocation_metrics = true
+            publish_node_metrics       = true
+          }
+        owner: nomad
+        group: nomad
+        mode: 0640
+
+    - name: Copy nomad-client configuration
+      copy:
+        dest: /etc/nomad.d/nomad-client.hcl
+        content: |
+          client {
+            enabled = true
+            # for minecraft modpack zip bombing allowance
+            artifact {
+              decompression_size_limit       = "0"
+              decompression_file_count_limit = 12000
+            }
+            bridge_network_hairpin_mode = true
+          }
+          plugin "raw_exec" {
+            config {
+              enabled = true
+            }
+          }
+          plugin "docker" {
+            config {
+              allow_privileged = true
+              volumes {
+                enabled = true
+              }
+            }
+          }
+        owner: nomad
+        group: nomad
+        mode: 0640
+
+    - name: Copy nomad-server configuration
+      copy:
+        dest: /etc/nomad.d/nomad-server.hcl
+        content: |
+          server {
+            enabled = true
+            bootstrap_expect = {{ nomad_server_bootstrap_expect }}
+          }
+        owner: nomad
+        group: nomad
+        mode: 0640
+
+    - name: Copy nomad systemd unit file
+      copy:
+        dest: /etc/systemd/system/nomad.service
+        content: |
+          [Unit]
+          Wants=network-online.target
+          After=network-online.target
+          Wants=consul.service
+          After=consul.service
+          [Service]
+          User=root
+          Group=root
+          ExecReload=/bin/kill -HUP $MAINPID
+          ExecStart=/usr/bin/nomad agent -config /etc/nomad.d
+          KillMode=process
+          KillSignal=SIGINT
+          LimitNOFILE=65536
+          LimitNPROC=infinity
+          Restart=on-failure
+          RestartSec=2
+          TasksMax=infinity
+          OOMScoreAdjust=-1000
+          [Install]
+          WantedBy=multi-user.target
+        owner: root
+        group: root
+        mode: 0644
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: true
+
+    - name: Enable and start nomad
+      systemd:
+        name: nomad
+        enabled: yes
+        state: started

@@ -1,0 +1,19 @@
+achilles ansible_host=192.168.0.241
+menelaus ansible_host=192.168.0.244
+agamemnon ansible_host=192.168.0.245
+gajax ansible_host=192.168.0.246
+
+[nfs_server]
+achilles 
+
+[nomad]
+menelaus 
+agamemnon
+gajax
+
+[worker]
+menelaus 
+agamemnon
+
+[ingress]
+gajax

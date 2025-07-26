@@ -1,0 +1,35 @@
+---
+- name: Configure NFS client
+  hosts: nomad
+  become: true
+  vars:
+    nfs_server: "192.168.0.241"
+    nfs_share: "/volume1/storage"
+    nfs_mount: "/storage"
+  tasks:
+    - name: Install NFS client packages
+      apt:
+        name: nfs-common
+        state: present
+        update_cache: yes
+
+    - name: Ensure NFS mount directory exists
+      file:
+        path: "{{ nfs_mount }}"
+        state: directory
+        mode: '0755'
+
+    - name: Debug NFS variables
+      debug:
+        msg: "src={{ nfs_server }}:{{ nfs_share }}, path={{ nfs_mount }}"
+
+    - name: Mount NFS share
+      mount:
+        src: "{{ nfs_server }}:{{ nfs_share }}"
+        path: "{{ nfs_mount }}"
+        fstype: nfs
+        opts: defaults
+        state: mounted
+
+    - name: Mount all filesystems from fstab
+      command: mount -a

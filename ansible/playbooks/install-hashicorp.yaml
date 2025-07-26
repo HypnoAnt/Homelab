@@ -1,0 +1,42 @@
+---
+- name: Install HashiCorp apt repository
+  hosts: nomad
+  become: true
+
+  tasks:
+    - name: Ensure required packages are installed
+      apt:
+        name: "{{ item }}"
+        state: present
+      loop: ["curl", "gnupg"]
+
+    - name: Create keyrings directory if it doesn't exist
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: Add HashiCorp apt GPG key
+      get_url:
+        url: https://apt.releases.hashicorp.com/gpg
+        dest: /etc/apt/keyrings/hashicorp.gpg
+        mode: '0644'
+
+    - name: Get architecture
+      command: dpkg --print-architecture
+      register: arch
+
+    - name: Get distro codename
+      command: lsb_release -cs
+      register: distro
+
+    - name: Add HashiCorp APT repository
+      copy:
+        dest: /etc/apt/sources.list.d/hashicorp.list
+        content: |
+          deb [arch={{ arch.stdout }} signed-by=/etc/apt/keyrings/hashicorp.gpg] https://apt.releases.hashicorp.com {{ distro.stdout }} main
+        mode: '0644'
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
